@@ -165,11 +165,14 @@ module Marionette
       epoch = Time.now.to_i
 
       mc = rpcclient "puppet"
-      mc.compound_filter "deploop_collection=#{cluster} and deploop_category=#{layer}"
+      mc.compound_filter "deploop_collection=#{cluster} and deploop_category=/.*#{layer}/"
       mc.progress = false
 
       nodes = mc.discover
       nodes = mc.discover.sort
+
+      puts "Deploying Puppet Run for nodes:"
+      puts nodes
 
       result = mc.runonce(:forcerun => true, :batch_size => interval)
       waitPuppetRun = Thread.new{checkForPuppetRun nodes, epoch}
@@ -205,36 +208,6 @@ module Marionette
           puts "ERROR"
         end
     end
-
-#        worker_services = ['hadoop-hdfs-datanode', 'hadoop-yarn-nodemanager']
-#        manager_1st_services = ['hadoop-hdfs-zkfc', 'hadoop-hdfs-jornalnode', 
-#          'zookeeper-server']
-#        nn_services = ['hadoop-hdfs-namenode']
-#        rm_services = ['hadoop-yarn-resourcemanager', 'mapreduce-historyserver']
-
-        # discover worker node collection
-#        mcService = rpcclient "service"
-#        mcService.compound_filter 'deploop_category=batch and deploop_role=dn'
-#        mcService.progress = false
-#        nodes = mcService.discover
-#        nodes = mcService.discover.sort
-
-#        nodes.each do |n| 
-#          mcFact = rpcclient 'rpcutil'
-#          mcFact.identity_filter "#{n}"
-#          mcFact.progress = false
-
-#          worker_services.each do |service|
-#            if operation == 'start'
-#              puts "starting #{service} in #{n}"
-#              res = mcService.start(:service => service)
-#            else
-#              puts "stopping #{service} in #{n}"
-#              res = mcService.stop(:service => service)
-#            end
-#          end
-#          mcFact.disconnect
-#        end
 
     # ==== Summary
     #
@@ -320,27 +293,27 @@ module Marionette
     def getClusterHosts(cluster)
       # discovering the node managers.
       mc = rpcclient "rpcutil"
-      mc.compound_filter "(deploop_role=nn1 or deploop_role=nn2 or deploop_role=rm) and deploop_collection=#{cluster} "
+      mc.compound_filter "(deploop_role=/.*nn1/ or deploop_role=/.*nn2/ or deploop_role=/.*rm/) and deploop_collection=#{cluster} "
       node_managers = mc.discover
 
       # the workers list
       mc.reset_filter
-      mc.compound_filter "deploop_collection=#{cluster} and deploop_role=dn"
+      mc.compound_filter "deploop_collection=#{cluster} and deploop_role=/.*dn/"
       node_workers = mc.discover
 
       # storing nodemanagers one by one
       mc.reset_filter
-      mc.compound_filter "deploop_collection=#{cluster} and deploop_role=nn1"
+      mc.compound_filter "deploop_collection=#{cluster} and deploop_role=/.*nn1/"
       node = mc.discover
       nn1 = node[0]
 
       mc.reset_filter
-      mc.compound_filter "deploop_collection=#{cluster} and deploop_role=nn2"
+      mc.compound_filter "deploop_collection=#{cluster} and deploop_role=/.*nn2/"
       node = mc.discover
       nn2 = node[0]
 
       mc.reset_filter
-      mc.compound_filter "deploop_collection=#{cluster} and deploop_role=rm"
+      mc.compound_filter "deploop_collection=#{cluster} and deploop_role=/.*rm/"
       node = mc.discover
       rm = node[0]
       mc.disconnect
@@ -441,17 +414,19 @@ module Marionette
       # 9. Minimal HDFS folders layout creation.
       #
       puts "HDFS folder initialization ..."
+      # tmp folder
       cmd = @cmdenv + 'sudo -E -u hdfs hadoop fs -mkdir /tmp'
       dpExecuteAction nn1, cmd
       cmd = @cmdenv + 'sudo -E -u hdfs hadoop fs -chmod -R 1777 /tmp'
       dpExecuteAction nn1, cmd
+      # MapReduce history server
       cmd = @cmdenv + 'sudo -E -u hdfs hadoop fs -mkdir -p /user/history'
       dpExecuteAction nn1, cmd
       cmd = @cmdenv + 'sudo -E -u hdfs hadoop fs -mkdir /user/history/done_intermediate'
       dpExecuteAction nn1, cmd
-      cmd = @cmdenv + 'sudo -E -u hdfs hadoop fs -chown -R mapred:mapred /user/history'
+      cmd = @cmdenv + 'sudo -E -u hdfs hadoop fs -chown -R mapred:hadoop /user/history'
       dpExecuteAction nn1, cmd
-      cmd = @cmdenv + 'sudo -E -u hdfs hadoop fs -chmod -R 777 /user/history'
+      cmd = @cmdenv + 'sudo -E -u hdfs hadoop fs -chmod -R 1777 /user/history'
       dpExecuteAction nn1, cmd
 
       #
